@@ -1,0 +1,11 @@
+services:
+  suno-radio-lite:
+    build: .
+    container_name: suno-radio-lite
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./music:/app/music
+      - ./assets:/app/assets
+      - ./data:/app/data
