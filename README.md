@@ -7,7 +7,9 @@ Discord操作だけで24時間音楽配信を実現するシンプルな配信�
 - **簡単セットアップ**: `.env`にはDiscordトークンだけ
 - **Discord完結**: 配信設定も楽曲管理もDiscordから
 - **プラットフォーム自由**: YouTube, Twitch, X, Kick... どこでも配信可能
-- **Google Drive連携**: ブラウザで楽曲アップロード → `/sync` で同期
+- **Google Drive連携**: 楽曲も背景画像もGoogle Driveから同期
+- **ラウドネスノーマライズ**: 楽曲同期時に自動で音量を統一
+- **自動復旧**: 配信中にコンテナが再起動しても自動で配信再開
 
 ---
 
@@ -22,7 +24,7 @@ Discord操作だけで24時間音楽配信を実現するシンプルな配信�
 ### 2. リポジトリ取得
 
 ```bash
-git clone https://github.com/yourname/suno-radio-lite.git
+git clone https://github.com/ex-takashima/suno-radio-lite.git
 cd suno-radio-lite
 ```
 
@@ -49,7 +51,7 @@ docker compose up -d
 ```
 /config url rtmp://a.rtmp.youtube.com/live2
 /config key your-stream-key
-/sync https://drive.google.com/drive/folders/xxxxx
+/sync (Google DriveのURLを入力)
 /start
 ```
 
@@ -57,23 +59,19 @@ docker compose up -d
 
 ---
 
+## UIパネル
+
+`/panel` コマンドでボタン操作パネルを表示できます。
+
+ボタンで配信をコントロールできます：
+- **【配信】** 開始・停止・スキップ・再生モード
+- **【情報】** 再生中・状態・プレイリスト
+- **【設定】** 配信設定・楽曲同期・背景同期・設定確認
+- **【システム】** システム負荷表示
+
+---
+
 ## Discordコマンド
-
-### 設定
-
-| コマンド | 説明 |
-|----------|------|
-| `/config url <URL>` | 配信先URL設定 |
-| `/config key <KEY>` | ストリームキー設定 |
-| `/config show` | 現在の設定確認 |
-
-### 楽曲
-
-| コマンド | 説明 |
-|----------|------|
-| `/sync <URL>` | Google Driveから楽曲同期 |
-| `/sync status` | 同期状態確認 |
-| `/playlist` | 楽曲一覧表示 |
 
 ### 配信
 
@@ -83,15 +81,71 @@ docker compose up -d
 | `/stop` | 配信停止 |
 | `/skip` | 次の曲へ |
 | `/now` | 再生中の曲を表示 |
+| `/mode` | 再生モード切替（ファイル名順 ↔ シャッフル） |
+| `/status` | 配信状態を確認 |
+
+### 楽曲・背景
+
+| コマンド | 説明 |
+|----------|------|
+| `/sync` | Google Driveから楽曲を同期 |
+| `/background` | Google Driveから背景画像を同期 |
+| `/playlist` | 楽曲一覧表示 |
+
+### 設定
+
+| コマンド | 説明 |
+|----------|------|
+| `/config url <URL>` | 配信先URL設定 |
+| `/config key <KEY>` | ストリームキー設定 |
+| `/config show` | 現在の設定確認 |
+
+### システム
+
+| コマンド | 説明 |
+|----------|------|
+| `/system` | CPU/メモリ/ディスク使用状況を表示 |
+| `/panel` | UIパネルを表示 |
 
 ---
 
 ## 楽曲の追加方法
 
 1. Google Driveにフォルダを作成
-2. 楽曲ファイル (mp3, wav, flac, m4a) をアップロード
+2. 楽曲ファイル (mp3, wav, flac, m4a, ogg) をアップロード
 3. フォルダを「リンクを知っている全員」で共有
-4. Discord で `/sync <共有URL>` を実行
+4. Discord で `/sync` を実行し、共有URLを入力
+
+同期完了後、自動でラウドネスノーマライズ（EBU R128: -14 LUFS）が行われます。
+
+---
+
+## 背景画像の変更
+
+### Google Driveから同期（おすすめ）
+
+1. Google Driveに背景画像をアップロード
+2. ファイルを「リンクを知っている全員」で共有
+3. Discord で `/background` を実行し、共有URLを入力
+
+### 直接アップロード
+
+```bash
+scp background.jpg user@vps:/opt/suno-radio-lite/assets/
+docker compose restart
+```
+
+---
+
+## 再生モード
+
+| モード | 説明 |
+|--------|------|
+| 📑 ファイル名順（デフォルト） | ファイル名でソートして再生、一周後も同じ順序 |
+| 🔀 シャッフル | ランダム再生、一周後は再シャッフル |
+
+`/mode` コマンドまたはUIパネルの「再生モード」ボタンで切り替えできます。
+配信中でも切り替え可能（現在の曲がスキップされて次の曲から適用）。
 
 ---
 
@@ -134,17 +188,30 @@ docker compose up -d
 | フレームレート | 15fps |
 | 映像ビットレート | 500kbps |
 | 音声ビットレート | 128kbps |
+| 音声サンプルレート | 48000Hz |
 | 合計 | 約630kbps |
 
 ---
 
-## 背景画像の変更
+## 自動復旧機能
 
-`assets/background.jpg` を差し替えて再起動
+配信中にコンテナが再起動した場合、自動的に配信を再開します。
+
+- 配信状態は `data/stream_state.json` に保存
+- 起動時に前回配信中だったかをチェック
+- 配信中だった場合は自動で `/start` を実行
+
+※ `/stop` で正常停止した場合は再起動しても配信は開始しません
+
+---
+
+## システムの更新方法
 
 ```bash
-# 画像を差し替え後
-docker compose restart
+cd /opt/suno-radio-lite
+git pull
+docker compose down
+docker compose up -d --build
 ```
 
 ---
@@ -160,12 +227,16 @@ docker compose restart
 ### 楽曲が同期されない
 
 1. Google Driveフォルダの共有設定を確認（「リンクを知っている全員」）
-2. `/sync status` で状態確認
+2. `/playlist` で楽曲一覧を確認
 
 ### 音が出ない
 
 1. `music/` ディレクトリに楽曲があるか確認
 2. `/playlist` で楽曲一覧を確認
+
+### システム負荷を確認したい
+
+`/system` コマンドでCPU、メモリ、ディスク使用状況を確認できます。
 
 ---
 
@@ -177,7 +248,9 @@ docker compose restart
 ├── assets/              # 背景画像
 │   └── background.jpg
 ├── music/               # 楽曲 (同期先)
-├── data/                # 設定データ
+├── data/                # 設定・状態データ
+│   ├── config.json      # 配信設定
+│   └── stream_state.json # 配信状態
 ├── docker-compose.yml
 ├── Dockerfile
 ├── .env                 # 環境変数
