@@ -97,14 +97,20 @@ class SyncModal(ui.Modal, title="📁 楽曲同期"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
         from core.gdrive_sync import gdrive_sync
         url = self.url_input.value if self.url_input.value else None
-        success, message = await gdrive_sync.sync(url)
+        success, message, details = await gdrive_sync.sync(url)
 
         if success:
             await interaction.followup.send(f"✅ {message}", ephemeral=True)
+            # チャンネルに通知（詳細メッセージ）
+            notify_msg = f"📁 楽曲同期が完了しました\n"
+            notify_msg += f"　　曲数: {details.get('track_count', 0)}曲"
+            if details.get('normalized_count', 0) > 0:
+                notify_msg += f"\n　　ノーマライズ: {details.get('normalized_success', 0)}/{details.get('normalized_count', 0)}曲"
+            await interaction.channel.send(notify_msg)
         else:
             await interaction.followup.send(f"❌ {message}", ephemeral=True)
 
@@ -121,7 +127,7 @@ class BackgroundModal(ui.Modal, title="🖼️ 背景画像同期"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
         from core.gdrive_sync import gdrive_sync
         url = self.url_input.value if self.url_input.value else None
@@ -129,6 +135,8 @@ class BackgroundModal(ui.Modal, title="🖼️ 背景画像同期"):
 
         if success:
             await interaction.followup.send(f"🖼️ {message}", ephemeral=True)
+            # チャンネルに通知
+            await interaction.channel.send(f"🖼️ 背景画像の同期が完了しました")
         else:
             await interaction.followup.send(f"❌ {message}", ephemeral=True)
 
@@ -383,10 +391,19 @@ async def sync_command(interaction: discord.Interaction, url: str = None):
     await interaction.response.defer()
 
     from core.gdrive_sync import gdrive_sync
-    success, message = await gdrive_sync.sync(url)
+    success, message, details = await gdrive_sync.sync(url)
 
     if success:
-        await interaction.followup.send(f"✅ {message}")
+        # 詳細メッセージを作成
+        embed = discord.Embed(title="📁 楽曲同期完了", color=0x00ff00)
+        embed.add_field(name="曲数", value=f"{details.get('track_count', 0)}曲", inline=True)
+        if details.get('normalized_count', 0) > 0:
+            embed.add_field(
+                name="ノーマライズ",
+                value=f"{details.get('normalized_success', 0)}/{details.get('normalized_count', 0)}曲",
+                inline=True
+            )
+        await interaction.followup.send(embed=embed)
     else:
         await interaction.followup.send(f"❌ {message}")
 
