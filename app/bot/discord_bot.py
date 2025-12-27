@@ -109,6 +109,30 @@ class SyncModal(ui.Modal, title="📁 楽曲同期"):
             await interaction.followup.send(f"❌ {message}", ephemeral=True)
 
 
+class BackgroundModal(ui.Modal, title="🖼️ 背景画像同期"):
+    """背景画像同期用のModal"""
+
+    url_input = ui.TextInput(
+        label="Google Drive共有ファイルURL",
+        placeholder="https://drive.google.com/file/d/...",
+        required=False,
+        max_length=300,
+        style=discord.TextStyle.short
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+        from core.gdrive_sync import gdrive_sync
+        url = self.url_input.value if self.url_input.value else None
+        success, message = await gdrive_sync.sync_background(url)
+
+        if success:
+            await interaction.followup.send(f"🖼️ {message}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ {message}", ephemeral=True)
+
+
 # =============================================================================
 # UIコンポーネント - View（ボタンパネル）
 # =============================================================================
@@ -235,6 +259,10 @@ class ControlPanelView(ui.View):
     async def sync_button(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_modal(SyncModal())
 
+    @ui.button(label="背景同期", emoji="🖼️", style=discord.ButtonStyle.secondary, custom_id="panel:background", row=2)
+    async def background_button(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(BackgroundModal())
+
     @ui.button(label="設定確認", emoji="👁️", style=discord.ButtonStyle.secondary, custom_id="panel:showconfig", row=2)
     async def showconfig_button(self, interaction: discord.Interaction, button: ui.Button):
         url = config.get_stream_url() or "(未設定)"
@@ -245,11 +273,13 @@ class ControlPanelView(ui.View):
             masked = "(未設定)"
 
         gdrive = config.get_gdrive_url() or "(未設定)"
+        bg_url = config.get_background_url() or "(未設定)"
 
         embed = discord.Embed(title="現在の設定", color=0x00ff00)
         embed.add_field(name="配信先URL", value=f"`{url}`", inline=False)
         embed.add_field(name="ストリームキー", value=f"`{masked}`", inline=False)
-        embed.add_field(name="Google Drive", value=f"`{gdrive}`", inline=False)
+        embed.add_field(name="楽曲フォルダ", value=f"`{gdrive}`", inline=False)
+        embed.add_field(name="背景画像", value=f"`{bg_url}`", inline=False)
         embed.add_field(name="設定状態", value="✅ OK" if config.is_configured() else "❌ 未完了", inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -280,7 +310,7 @@ async def panel_command(interaction: discord.Interaction):
     )
     embed.add_field(
         name="【設定】",
-        value="配信設定・楽曲同期・設定確認",
+        value="配信設定・楽曲同期・背景同期・設定確認",
         inline=False
     )
 
@@ -326,11 +356,13 @@ async def config_show(interaction: discord.Interaction):
         masked = "(未設定)"
 
     gdrive = config.get_gdrive_url() or "(未設定)"
+    bg_url = config.get_background_url() or "(未設定)"
 
     embed = discord.Embed(title="現在の設定", color=0x00ff00)
     embed.add_field(name="配信先URL", value=f"`{url}`", inline=False)
     embed.add_field(name="ストリームキー", value=f"`{masked}`", inline=False)
-    embed.add_field(name="Google Drive", value=f"`{gdrive}`", inline=False)
+    embed.add_field(name="楽曲フォルダ", value=f"`{gdrive}`", inline=False)
+    embed.add_field(name="背景画像", value=f"`{bg_url}`", inline=False)
     embed.add_field(name="設定状態", value="OK" if config.is_configured() else "未完了", inline=False)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -509,6 +541,26 @@ async def shuffle_command(interaction: discord.Interaction):
         await interaction.response.send_message("🔀 シャッフル完了")
     else:
         await interaction.response.send_message("❌ シャッフルに失敗しました", ephemeral=True)
+
+
+# =============================================================================
+# 背景画像コマンド
+# =============================================================================
+
+@bot.tree.command(name="background", description="Google Driveから背景画像を同期")
+@is_allowed_channel()
+@app_commands.describe(url="Google Drive共有ファイルURL（省略時は保存済みURLを使用）")
+async def background_command(interaction: discord.Interaction, url: str = None):
+    """Google Driveから背景画像を同期"""
+    await interaction.response.defer()
+
+    from core.gdrive_sync import gdrive_sync
+    success, message = await gdrive_sync.sync_background(url)
+
+    if success:
+        await interaction.followup.send(f"🖼️ {message}")
+    else:
+        await interaction.followup.send(f"❌ {message}")
 
 
 # =============================================================================

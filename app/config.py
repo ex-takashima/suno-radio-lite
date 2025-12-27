@@ -107,6 +107,16 @@ class Config:
         cls._runtime_config['last_sync'] = timestamp
 
     @classmethod
+    def get_background_url(cls) -> str:
+        """Get background image Google Drive URL"""
+        return cls._runtime_config.get('background_url', '')
+
+    @classmethod
+    def set_background_url(cls, url: str):
+        """Set background image Google Drive URL"""
+        cls._runtime_config['background_url'] = url
+
+    @classmethod
     def get_rtmp_output_url(cls) -> str:
         """Get full RTMP output URL"""
         url = cls.get_stream_url()
