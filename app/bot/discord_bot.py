@@ -3,6 +3,7 @@ SUNO Radio Lite - Discord Bot
 シンプルなコマンドセット + UIボタン操作
 """
 
+import asyncio
 import discord
 from discord import app_commands, ui
 from discord.ext import commands
