@@ -72,8 +72,8 @@ class AudioPlayer:
             print("楽曲がありません", flush=True)
             return False
 
-        # シャッフル
-        random.shuffle(tracks)
+        # ファイル名順にソート（デフォルト）
+        tracks.sort()
         print(f"プレイリスト読込: {len(tracks)}曲", flush=True)
 
         self.playlist = tracks
@@ -91,8 +91,7 @@ class AudioPlayer:
         self.playlist_index += 1
 
         if self.playlist_index >= len(self.playlist):
-            print("プレイリスト終端、再シャッフル", flush=True)
-            random.shuffle(self.playlist)
+            print("プレイリスト終端、最初から再生", flush=True)
             self.playlist_index = 0
 
         return track
@@ -302,11 +301,14 @@ class AudioPlayer:
         return True
 
     def shuffle(self) -> bool:
-        """プレイリストを再読み込み＆シャッフル"""
-        if not self._load_playlist():
-            return False
+        """プレイリストをシャッフル"""
+        if not self.playlist:
+            if not self._load_playlist():
+                return False
 
-        print("プレイリスト再シャッフル", flush=True)
+        random.shuffle(self.playlist)
+        self.playlist_index = 0
+        print("プレイリストをシャッフルしました", flush=True)
 
         if self.is_playing:
             self._skip_requested = True
