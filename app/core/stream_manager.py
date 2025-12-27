@@ -4,6 +4,7 @@ FIFOベースの配信処理
 """
 
 import asyncio
+import json
 import os
 from datetime import datetime
 from config import config
@@ -17,6 +18,36 @@ class StreamManager:
         self.is_streaming = False
         self.start_time = None
         self._stop_requested = False
+        self._state_file = os.path.join(config.DATA_DIR, 'stream_state.json')
+
+    def _save_state(self, streaming: bool):
+        """配信状態をファイルに保存"""
+        try:
+            state = {'streaming': streaming, 'timestamp': datetime.now().isoformat()}
+            with open(self._state_file, 'w') as f:
+                json.dump(state, f)
+        except Exception as e:
+            print(f"状態保存エラー: {e}", flush=True)
+
+    def _load_state(self) -> bool:
+        """保存された配信状態を読み込み"""
+        try:
+            if os.path.exists(self._state_file):
+                with open(self._state_file, 'r') as f:
+                    state = json.load(f)
+                return state.get('streaming', False)
+        except Exception as e:
+            print(f"状態読み込みエラー: {e}", flush=True)
+        return False
+
+    async def auto_start_if_needed(self) -> bool:
+        """前回配信中だった場合は自動開始"""
+        if self._load_state():
+            print("前回配信中だったため、自動で配信を再開します", flush=True)
+            success, msg = await self.start()
+            print(f"自動開始結果: {msg}", flush=True)
+            return success
+        return False
 
     def _build_ffmpeg_command(self) -> list:
         """ffmpegコマンドを構築"""
@@ -88,6 +119,7 @@ class StreamManager:
         self.is_streaming = True
         self.start_time = datetime.now()
         self._stop_requested = False
+        self._save_state(True)  # 配信状態を保存
 
         print("=" * 50, flush=True)
         print("SUNO Radio Lite 配信開始", flush=True)
@@ -186,6 +218,7 @@ class StreamManager:
 
         print("配信停止リクエスト", flush=True)
         self._stop_requested = True
+        self._save_state(False)  # 配信停止を保存
 
         await video_generator.stop()
         await audio_player.stop()

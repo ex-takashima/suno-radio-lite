@@ -26,6 +26,10 @@ class RadioBot(commands.Bot):
     async def on_ready(self):
         print(f"Discord Bot起動: {self.user}", flush=True)
 
+        # 前回配信中だった場合は自動再開
+        from core.stream_manager import stream_manager
+        await stream_manager.auto_start_if_needed()
+
 
 bot = RadioBot()
 
