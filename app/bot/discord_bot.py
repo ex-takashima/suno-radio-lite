@@ -292,6 +292,57 @@ class ControlPanelView(ui.View):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @ui.button(label="システム", emoji="💻", style=discord.ButtonStyle.secondary, custom_id="panel:system", row=3)
+    async def system_button(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # CPU負荷
+            cpu_proc = await asyncio.create_subprocess_shell(
+                "cat /proc/loadavg | awk '{print $1, $2, $3}'",
+                stdout=asyncio.subprocess.PIPE
+            )
+            cpu_out, _ = await cpu_proc.communicate()
+            load_avg = cpu_out.decode().strip()
+
+            # メモリ使用量
+            mem_proc = await asyncio.create_subprocess_shell(
+                "free -h | awk 'NR==2{print $3\"/\"$2\" (\"int($3/$2*100)\"%)\"}' ",
+                stdout=asyncio.subprocess.PIPE
+            )
+            mem_out, _ = await mem_proc.communicate()
+            memory = mem_out.decode().strip()
+
+            # ディスク使用量
+            disk_proc = await asyncio.create_subprocess_shell(
+                "df -h / | awk 'NR==2{print $3\"/\"$2\" (\"$5\")\"}'",
+                stdout=asyncio.subprocess.PIPE
+            )
+            disk_out, _ = await disk_proc.communicate()
+            disk = disk_out.decode().strip()
+
+            # 楽曲フォルダのサイズ
+            music_proc = await asyncio.create_subprocess_shell(
+                f"du -sh {config.MUSIC_DIR} 2>/dev/null | awk '{{print $1}}'",
+                stdout=asyncio.subprocess.PIPE
+            )
+            music_out, _ = await music_proc.communicate()
+            music_size = music_out.decode().strip() or "N/A"
+
+            embed = discord.Embed(
+                title="💻 システム状態",
+                color=0x2ECC71
+            )
+            embed.add_field(name="CPU負荷", value=load_avg, inline=True)
+            embed.add_field(name="メモリ", value=memory, inline=True)
+            embed.add_field(name="ディスク", value=disk, inline=True)
+            embed.add_field(name="楽曲フォルダ", value=music_size, inline=True)
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ エラー: {str(e)}", ephemeral=True)
+
 
 # =============================================================================
 # パネルコマンド
@@ -319,6 +370,11 @@ async def panel_command(interaction: discord.Interaction):
     embed.add_field(
         name="【設定】",
         value="配信設定・楽曲同期・背景同期・設定確認",
+        inline=False
+    )
+    embed.add_field(
+        name="【システム】",
+        value="システム負荷表示",
         inline=False
     )
 
