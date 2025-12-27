@@ -362,7 +362,7 @@ async def panel_command(interaction: discord.Interaction):
     )
     embed.add_field(
         name="【配信】",
-        value="開始・停止・スキップ・シャッフル",
+        value="開始・停止・スキップ・再生モード",
         inline=False
     )
     embed.add_field(
