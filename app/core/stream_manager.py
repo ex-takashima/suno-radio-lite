@@ -205,8 +205,16 @@ class StreamManager:
         return audio_player.skip()
 
     def shuffle(self) -> bool:
-        """プレイリストを再シャッフル"""
+        """プレイリストを再シャッフル（後方互換用）"""
         return audio_player.shuffle()
+
+    def toggle_playback_mode(self) -> str:
+        """再生モードを切り替え"""
+        return audio_player.toggle_playback_mode()
+
+    def get_playback_mode(self) -> str:
+        """現在の再生モードを取得"""
+        return audio_player.get_playback_mode()
 
     def get_status(self) -> dict:
         """配信状態を取得"""

@@ -32,6 +32,7 @@ class AudioPlayer:
         self.current_track = None
         self.playlist = []
         self.playlist_index = 0
+        self.shuffle_mode = False  # False=ファイル名順, True=シャッフル
         self._stop_requested = False
         self._skip_requested = False
         self._decoder_process = None
@@ -72,9 +73,13 @@ class AudioPlayer:
             print("楽曲がありません", flush=True)
             return False
 
-        # ファイル名順にソート（デフォルト）
-        tracks.sort()
-        print(f"プレイリスト読込: {len(tracks)}曲", flush=True)
+        # モードに応じてソートまたはシャッフル
+        if self.shuffle_mode:
+            random.shuffle(tracks)
+            print(f"プレイリスト読込: {len(tracks)}曲（シャッフル）", flush=True)
+        else:
+            tracks.sort()
+            print(f"プレイリスト読込: {len(tracks)}曲（ファイル名順）", flush=True)
 
         self.playlist = tracks
         self.playlist_index = 0
@@ -91,7 +96,11 @@ class AudioPlayer:
         self.playlist_index += 1
 
         if self.playlist_index >= len(self.playlist):
-            print("プレイリスト終端、最初から再生", flush=True)
+            if self.shuffle_mode:
+                print("プレイリスト終端、再シャッフル", flush=True)
+                random.shuffle(self.playlist)
+            else:
+                print("プレイリスト終端、最初から再生", flush=True)
             self.playlist_index = 0
 
         return track
@@ -300,19 +309,33 @@ class AudioPlayer:
         self._skip_requested = True
         return True
 
+    def toggle_playback_mode(self) -> str:
+        """再生モードを切り替え（ファイル名順 ↔ シャッフル）"""
+        self.shuffle_mode = not self.shuffle_mode
+        mode_name = "シャッフル" if self.shuffle_mode else "ファイル名順"
+        print(f"再生モード変更: {mode_name}", flush=True)
+
+        # プレイリストを再読み込み
+        if self.playlist:
+            if self.shuffle_mode:
+                random.shuffle(self.playlist)
+            else:
+                self.playlist.sort()
+            self.playlist_index = 0
+
+            if self.is_playing:
+                self._skip_requested = True
+
+        return mode_name
+
+    def get_playback_mode(self) -> str:
+        """現在の再生モードを取得"""
+        return "シャッフル" if self.shuffle_mode else "ファイル名順"
+
     def shuffle(self) -> bool:
-        """プレイリストをシャッフル"""
-        if not self.playlist:
-            if not self._load_playlist():
-                return False
-
-        random.shuffle(self.playlist)
-        self.playlist_index = 0
-        print("プレイリストをシャッフルしました", flush=True)
-
-        if self.is_playing:
-            self._skip_requested = True
-
+        """プレイリストをシャッフル（後方互換用）"""
+        if not self.shuffle_mode:
+            self.toggle_playback_mode()
         return True
 
     def get_current_track(self) -> dict:

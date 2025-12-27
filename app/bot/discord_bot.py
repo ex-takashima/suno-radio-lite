@@ -178,13 +178,12 @@ class ControlPanelView(ui.View):
         else:
             await interaction.response.send_message("❌ 配信中ではありません", ephemeral=True)
 
-    @ui.button(label="シャッフル", emoji="🔀", style=discord.ButtonStyle.secondary, custom_id="panel:shuffle", row=0)
-    async def shuffle_button(self, interaction: discord.Interaction, button: ui.Button):
-        from core.stream_manager import stream_manager
-        if stream_manager.shuffle():
-            await interaction.response.send_message("🔀 シャッフル完了", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ シャッフルに失敗しました", ephemeral=True)
+    @ui.button(label="再生モード", emoji="🔀", style=discord.ButtonStyle.secondary, custom_id="panel:mode", row=0)
+    async def mode_button(self, interaction: discord.Interaction, button: ui.Button):
+        from core.audio_player import audio_player
+        new_mode = audio_player.toggle_playback_mode()
+        emoji = "🔀" if audio_player.shuffle_mode else "📑"
+        await interaction.response.send_message(f"{emoji} 再生モード: {new_mode}", ephemeral=True)
 
     # --- 情報表示 ---
 
@@ -211,6 +210,7 @@ class ControlPanelView(ui.View):
     async def status_button(self, interaction: discord.Interaction, button: ui.Button):
         from core.stream_manager import stream_manager
         from core.gdrive_sync import gdrive_sync
+        from core.audio_player import audio_player
 
         stream_status = stream_manager.get_status()
         sync_status = gdrive_sync.get_status()
@@ -231,6 +231,8 @@ class ControlPanelView(ui.View):
             embed.add_field(name="再生中", value=stream_status['current_track']['title'], inline=False)
 
         embed.add_field(name="楽曲数", value=f"{sync_status['track_count']}曲", inline=True)
+        mode_emoji = "🔀" if audio_player.shuffle_mode else "📑"
+        embed.add_field(name="再生モード", value=f"{mode_emoji} {audio_player.get_playback_mode()}", inline=True)
         embed.add_field(name="設定", value="✅ 完了" if config.is_configured() else "❌ 未完了", inline=True)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -605,16 +607,15 @@ async def status_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="shuffle", description="プレイリストを再シャッフル")
+@bot.tree.command(name="mode", description="再生モードを切り替え（ファイル名順 ↔ シャッフル）")
 @is_allowed_channel()
-async def shuffle_command(interaction: discord.Interaction):
-    """プレイリストを再シャッフル"""
-    from core.stream_manager import stream_manager
+async def mode_command(interaction: discord.Interaction):
+    """再生モードを切り替え"""
+    from core.audio_player import audio_player
 
-    if stream_manager.shuffle():
-        await interaction.response.send_message("🔀 シャッフル完了")
-    else:
-        await interaction.response.send_message("❌ シャッフルに失敗しました", ephemeral=True)
+    new_mode = audio_player.toggle_playback_mode()
+    emoji = "🔀" if audio_player.shuffle_mode else "📑"
+    await interaction.response.send_message(f"{emoji} 再生モード: {new_mode}")
 
 
 # =============================================================================
