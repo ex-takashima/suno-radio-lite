@@ -1,10 +1,10 @@
 """
 SUNO Radio Lite - Discord Bot
-シンプルなコマンドセット
+シンプルなコマンドセット + UIボタン操作
 """
 
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands
 from config import config
 
@@ -17,6 +17,8 @@ class RadioBot(commands.Bot):
 
     async def setup_hook(self):
         """Bot起動時の初期化"""
+        # 永続的なViewを登録
+        self.add_view(ControlPanelView())
         await self.tree.sync()
         print("Discordコマンド同期完了", flush=True)
 
@@ -37,7 +39,256 @@ def is_allowed_channel():
 
 
 # =============================================================================
-# 設定コマンド
+# UIコンポーネント - Modal（入力フォーム）
+# =============================================================================
+
+class ConfigModal(ui.Modal, title="⚙️ 配信設定"):
+    """配信設定用のModal"""
+
+    url_input = ui.TextInput(
+        label="配信先URL",
+        placeholder="rtmp://a.rtmp.youtube.com/live2",
+        required=False,
+        max_length=200
+    )
+
+    key_input = ui.TextInput(
+        label="ストリームキー",
+        placeholder="xxxx-xxxx-xxxx-xxxx-xxxx",
+        required=False,
+        max_length=100
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        messages = []
+
+        if self.url_input.value:
+            config.set_stream_url(self.url_input.value)
+            messages.append(f"配信先URL: `{self.url_input.value}`")
+
+        if self.key_input.value:
+            config.set_stream_key(self.key_input.value)
+            key = self.key_input.value
+            masked = key[:4] + "*" * (len(key) - 8) + key[-4:] if len(key) > 8 else "****"
+            messages.append(f"ストリームキー: `{masked}`")
+
+        if messages:
+            await config.save()
+            await interaction.response.send_message(
+                "✅ 設定を保存しました\n" + "\n".join(messages),
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "変更はありませんでした",
+                ephemeral=True
+            )
+
+
+class SyncModal(ui.Modal, title="📁 楽曲同期"):
+    """Google Drive同期用のModal"""
+
+    url_input = ui.TextInput(
+        label="Google Drive共有フォルダURL",
+        placeholder="https://drive.google.com/drive/folders/...",
+        required=False,
+        max_length=300,
+        style=discord.TextStyle.short
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+        from core.gdrive_sync import gdrive_sync
+        url = self.url_input.value if self.url_input.value else None
+        success, message = await gdrive_sync.sync(url)
+
+        if success:
+            await interaction.followup.send(f"✅ {message}", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ {message}", ephemeral=True)
+
+
+# =============================================================================
+# UIコンポーネント - View（ボタンパネル）
+# =============================================================================
+
+class ControlPanelView(ui.View):
+    """コントロールパネルのボタン群"""
+
+    def __init__(self):
+        super().__init__(timeout=None)  # 永続化
+
+    # --- 配信制御 ---
+
+    @ui.button(label="開始", emoji="▶️", style=discord.ButtonStyle.green, custom_id="panel:start", row=0)
+    async def start_button(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        from core.stream_manager import stream_manager
+        success, message = await stream_manager.start()
+        emoji = "🎬" if success else "❌"
+        await interaction.followup.send(f"{emoji} {message}", ephemeral=True)
+
+    @ui.button(label="停止", emoji="⏹️", style=discord.ButtonStyle.red, custom_id="panel:stop", row=0)
+    async def stop_button(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        from core.stream_manager import stream_manager
+        success, message = await stream_manager.stop()
+        emoji = "🛑" if success else "❌"
+        await interaction.followup.send(f"{emoji} {message}", ephemeral=True)
+
+    @ui.button(label="スキップ", emoji="⏭️", style=discord.ButtonStyle.primary, custom_id="panel:skip", row=0)
+    async def skip_button(self, interaction: discord.Interaction, button: ui.Button):
+        from core.stream_manager import stream_manager
+        if stream_manager.skip():
+            await interaction.response.send_message("⏭️ スキップしました", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ 配信中ではありません", ephemeral=True)
+
+    @ui.button(label="シャッフル", emoji="🔀", style=discord.ButtonStyle.secondary, custom_id="panel:shuffle", row=0)
+    async def shuffle_button(self, interaction: discord.Interaction, button: ui.Button):
+        from core.stream_manager import stream_manager
+        if stream_manager.shuffle():
+            await interaction.response.send_message("🔀 シャッフル完了", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ シャッフルに失敗しました", ephemeral=True)
+
+    # --- 情報表示 ---
+
+    @ui.button(label="再生中", emoji="🎵", style=discord.ButtonStyle.secondary, custom_id="panel:now", row=1)
+    async def now_button(self, interaction: discord.Interaction, button: ui.Button):
+        from core.stream_manager import stream_manager
+        status = stream_manager.get_status()
+
+        if not status['is_streaming']:
+            await interaction.response.send_message("配信していません", ephemeral=True)
+            return
+
+        track = status['current_track']
+        if track:
+            embed = discord.Embed(title="🎵 Now Playing", color=0x00ff00)
+            embed.add_field(name="曲名", value=track['title'], inline=False)
+            if 'elapsed_formatted' in track:
+                embed.add_field(name="再生時間", value=track['elapsed_formatted'], inline=True)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message("再生中の曲がありません", ephemeral=True)
+
+    @ui.button(label="状態", emoji="📊", style=discord.ButtonStyle.secondary, custom_id="panel:status", row=1)
+    async def status_button(self, interaction: discord.Interaction, button: ui.Button):
+        from core.stream_manager import stream_manager
+        from core.gdrive_sync import gdrive_sync
+
+        stream_status = stream_manager.get_status()
+        sync_status = gdrive_sync.get_status()
+
+        embed = discord.Embed(
+            title="SUNO Radio Lite",
+            color=0x00ff00 if stream_status['is_streaming'] else 0x808080
+        )
+
+        if stream_status['is_streaming']:
+            embed.add_field(name="状態", value="🟢 配信中", inline=True)
+            if stream_status['uptime_formatted']:
+                embed.add_field(name="配信時間", value=stream_status['uptime_formatted'], inline=True)
+        else:
+            embed.add_field(name="状態", value="⚫ 停止中", inline=True)
+
+        if stream_status['current_track']:
+            embed.add_field(name="再生中", value=stream_status['current_track']['title'], inline=False)
+
+        embed.add_field(name="楽曲数", value=f"{sync_status['track_count']}曲", inline=True)
+        embed.add_field(name="設定", value="✅ 完了" if config.is_configured() else "❌ 未完了", inline=True)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="プレイリスト", emoji="📋", style=discord.ButtonStyle.secondary, custom_id="panel:playlist", row=1)
+    async def playlist_button(self, interaction: discord.Interaction, button: ui.Button):
+        from core.gdrive_sync import gdrive_sync
+
+        tracks = gdrive_sync.get_tracks()
+        if not tracks:
+            await interaction.response.send_message("楽曲がありません", ephemeral=True)
+            return
+
+        display_tracks = tracks[:20]
+        track_list = "\n".join([f"{i+1}. {t}" for i, t in enumerate(display_tracks)])
+
+        if len(tracks) > 20:
+            track_list += f"\n... 他 {len(tracks) - 20} 曲"
+
+        embed = discord.Embed(title=f"楽曲一覧 ({len(tracks)}曲)", description=track_list, color=0x00ff00)
+
+        status = gdrive_sync.get_status()
+        if status['last_sync']:
+            embed.set_footer(text=f"最終同期: {status['last_sync']}")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # --- 設定 ---
+
+    @ui.button(label="配信設定", emoji="⚙️", style=discord.ButtonStyle.secondary, custom_id="panel:config", row=2)
+    async def config_button(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(ConfigModal())
+
+    @ui.button(label="楽曲同期", emoji="📁", style=discord.ButtonStyle.secondary, custom_id="panel:sync", row=2)
+    async def sync_button(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(SyncModal())
+
+    @ui.button(label="設定確認", emoji="👁️", style=discord.ButtonStyle.secondary, custom_id="panel:showconfig", row=2)
+    async def showconfig_button(self, interaction: discord.Interaction, button: ui.Button):
+        url = config.get_stream_url() or "(未設定)"
+        key = config.get_stream_key()
+        if key:
+            masked = key[:4] + "*" * (len(key) - 8) + key[-4:] if len(key) > 8 else "****"
+        else:
+            masked = "(未設定)"
+
+        gdrive = config.get_gdrive_url() or "(未設定)"
+
+        embed = discord.Embed(title="現在の設定", color=0x00ff00)
+        embed.add_field(name="配信先URL", value=f"`{url}`", inline=False)
+        embed.add_field(name="ストリームキー", value=f"`{masked}`", inline=False)
+        embed.add_field(name="Google Drive", value=f"`{gdrive}`", inline=False)
+        embed.add_field(name="設定状態", value="✅ OK" if config.is_configured() else "❌ 未完了", inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# =============================================================================
+# パネルコマンド
+# =============================================================================
+
+@bot.tree.command(name="panel", description="コントロールパネルを表示")
+@is_allowed_channel()
+async def panel_command(interaction: discord.Interaction):
+    """コントロールパネルを表示"""
+    embed = discord.Embed(
+        title="🎵 SUNO Radio Lite",
+        description="ボタンで配信をコントロールできます",
+        color=0x5865F2
+    )
+    embed.add_field(
+        name="【配信】",
+        value="開始・停止・スキップ・シャッフル",
+        inline=False
+    )
+    embed.add_field(
+        name="【情報】",
+        value="再生中・状態・プレイリスト",
+        inline=False
+    )
+    embed.add_field(
+        name="【設定】",
+        value="配信設定・楽曲同期・設定確認",
+        inline=False
+    )
+
+    await interaction.response.send_message(embed=embed, view=ControlPanelView())
+
+
+# =============================================================================
+# 設定コマンド（スラッシュコマンド版 - 従来互換）
 # =============================================================================
 
 config_group = app_commands.Group(name="config", description="配信設定")
