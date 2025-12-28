@@ -73,7 +73,7 @@ class GDriveSync:
             cmd = [
                 'ffmpeg', '-y', '-i', filepath, '-vn',
                 '-af', f'loudnorm=I={self.TARGET_LUFS}:TP={self.TRUE_PEAK}:LRA=11',
-                '-ar', '44100', '-b:a', '320k', temp_path
+                '-f', 'mp3', '-ar', '44100', '-b:a', '320k', temp_path
             ]
 
             loop = asyncio.get_event_loop()
