@@ -130,19 +130,41 @@ class GDriveSync:
         self._save_normalized_list()
         return total, success
 
-    async def sync(self, url: str = None, normalize: bool = True) -> tuple[bool, str, dict]:
+    def _clear_music_dir(self):
+        """楽曲ディレクトリをクリア"""
+        supported_ext = {'.mp3', '.wav', '.flac', '.m4a', '.ogg'}
+        if os.path.exists(config.MUSIC_DIR):
+            for file in os.listdir(config.MUSIC_DIR):
+                if os.path.splitext(file)[1].lower() in supported_ext:
+                    filepath = os.path.join(config.MUSIC_DIR, file)
+                    try:
+                        os.remove(filepath)
+                    except Exception:
+                        pass
+        # ノーマライズ済みリストもクリア
+        self.normalized_files.clear()
+        self._save_normalized_list()
+
+    async def sync(self, url: str = None, normalize: bool = True, replace: bool = False) -> tuple[bool, str, dict]:
         """
         Google Driveフォルダから楽曲を同期
 
         Args:
             url: Google Drive共有フォルダURL (省略時は保存済みURLを使用)
             normalize: ダウンロード後にラウドネスノーマライズを実行するか
+            replace: 既存の楽曲を削除して入れ替えるか（配信中は不可）
 
         Returns:
             (success, message, details)
         """
         if self.is_syncing:
             return False, "同期中です。しばらくお待ちください。", {}
+
+        # 入れ替えモードの場合、配信中かチェック
+        if replace:
+            from core.stream_manager import stream_manager
+            if stream_manager.is_streaming:
+                return False, "配信中は楽曲の入れ替えができません。\n配信を停止してから再度お試しください。", {}
 
         # URLの決定
         if url:
@@ -157,9 +179,14 @@ class GDriveSync:
         self.is_syncing = True
         self.progress = "同期を開始..."
 
-        details = {'track_count': 0, 'normalized_count': 0, 'normalized_success': 0}
+        details = {'track_count': 0, 'normalized_count': 0, 'normalized_success': 0, 'replaced': replace}
 
         try:
+            # 入れ替えモードの場合、既存の楽曲を削除
+            if replace:
+                self.progress = "既存の楽曲を削除中..."
+                self._clear_music_dir()
+
             # gdownでフォルダをダウンロード
             import gdown
 

@@ -101,17 +101,27 @@ class SyncModal(ui.Modal, title="📁 楽曲同期"):
         style=discord.TextStyle.short
     )
 
+    replace_input = ui.TextInput(
+        label="既存の楽曲を削除して入れ替える場合は「入替」と入力",
+        placeholder="空欄=追加同期 / 入替=全入れ替え（配信中は不可）",
+        required=False,
+        max_length=10,
+        style=discord.TextStyle.short
+    )
+
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         from core.gdrive_sync import gdrive_sync
         url = self.url_input.value if self.url_input.value else None
-        success, message, details = await gdrive_sync.sync(url)
+        replace = self.replace_input.value.strip() == "入替"
+        success, message, details = await gdrive_sync.sync(url, replace=replace)
 
         if success:
             await interaction.followup.send(f"✅ {message}", ephemeral=True)
             # チャンネルに通知（詳細メッセージ）
-            notify_msg = f"📁 楽曲同期が完了しました\n"
+            mode = "入れ替え" if details.get('replaced') else "追加"
+            notify_msg = f"📁 楽曲同期が完了しました（{mode}）\n"
             notify_msg += f"　　曲数: {details.get('track_count', 0)}曲"
             if details.get('normalized_count', 0) > 0:
                 notify_msg += f"\n　　ノーマライズ: {details.get('normalized_success', 0)}/{details.get('normalized_count', 0)}曲"
