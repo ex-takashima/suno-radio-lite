@@ -226,6 +226,10 @@ class GDriveSync:
             self.progress = ""
             self.is_syncing = False
 
+            # プレイリストを再読み込み（配信中でも反映）
+            from core.audio_player import audio_player
+            audio_player.reload_playlist()
+
             # メッセージ作成
             message = f"同期完了: {count}曲"
             if normalize and details['normalized_count'] > 0:
@@ -260,6 +264,29 @@ class GDriveSync:
             'track_count': self._count_tracks(),
             'last_error': self.last_error
         }
+
+    def has_unnormalized_tracks(self) -> bool:
+        """未ノーマライズの楽曲があるかチェック"""
+        supported_ext = {'.mp3', '.wav', '.flac', '.m4a'}
+        if os.path.exists(config.MUSIC_DIR):
+            for file in os.listdir(config.MUSIC_DIR):
+                if os.path.splitext(file)[1].lower() in supported_ext:
+                    filepath = os.path.join(config.MUSIC_DIR, file)
+                    if not self._is_normalized(filepath):
+                        return True
+        return False
+
+    def get_unnormalized_count(self) -> int:
+        """未ノーマライズの楽曲数を取得"""
+        count = 0
+        supported_ext = {'.mp3', '.wav', '.flac', '.m4a'}
+        if os.path.exists(config.MUSIC_DIR):
+            for file in os.listdir(config.MUSIC_DIR):
+                if os.path.splitext(file)[1].lower() in supported_ext:
+                    filepath = os.path.join(config.MUSIC_DIR, file)
+                    if not self._is_normalized(filepath):
+                        count += 1
+        return count
 
     def get_tracks(self) -> list[str]:
         """楽曲ファイル一覧を取得"""

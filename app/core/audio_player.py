@@ -358,6 +358,15 @@ class AudioPlayer:
         """FIFOパスを取得"""
         return self.fifo_path
 
+    def reload_playlist(self) -> bool:
+        """プレイリストを再読み込み（同期後に呼び出し）"""
+        old_count = len(self.playlist) if self.playlist else 0
+        if self._load_playlist():
+            new_count = len(self.playlist)
+            print(f"プレイリスト更新: {old_count}曲 → {new_count}曲", flush=True)
+            return True
+        return False
+
 
 # シングルトン
 audio_player = AudioPlayer()

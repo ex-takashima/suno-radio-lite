@@ -112,6 +112,11 @@ class StreamManager:
         if not gdrive_sync.get_tracks():
             return False, "楽曲がありません。`/sync` で楽曲を同期してください。"
 
+        # ノーマライズ確認
+        unnormalized = gdrive_sync.get_unnormalized_count()
+        if unnormalized > 0:
+            return False, f"未ノーマライズの楽曲が{unnormalized}曲あります。\n`/sync` を実行してノーマライズを完了してください。"
+
         # 背景確認
         if not os.path.exists(config.get_background_path()):
             return False, "背景画像がありません。assets/background.jpg を配置してください。"
