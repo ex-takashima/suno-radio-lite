@@ -54,7 +54,7 @@ class GDriveSync:
 
     async def _normalize_file(self, filepath: str) -> bool:
         """
-        ファイルをラウドネスノーマライズ
+        ファイルをラウドネスノーマライズ（2パス方式）
 
         Args:
             filepath: 音声ファイルのパス
@@ -62,6 +62,9 @@ class GDriveSync:
         Returns:
             成功したかどうか
         """
+        import json
+        import re
+
         if self._is_normalized(filepath):
             return True
 
@@ -69,23 +72,61 @@ class GDriveSync:
         temp_path = filepath + '.tmp'
 
         try:
-            # ffmpegでラウドネスノーマライズ
-            cmd = [
+            loop = asyncio.get_event_loop()
+
+            # 1パス目: ラウドネス測定
+            cmd1 = [
+                'ffmpeg', '-i', filepath, '-vn',
+                '-af', f'loudnorm=I={self.TARGET_LUFS}:TP={self.TRUE_PEAK}:LRA=11:print_format=json',
+                '-f', 'null', '-'
+            ]
+
+            process1 = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(cmd1, capture_output=True, text=True)
+            )
+
+            if process1.returncode != 0:
+                print(f"❌ 測定失敗: {filename}", flush=True)
+                return False
+
+            # stderrからJSONを抽出（loudnormはstderrに出力）
+            stderr = process1.stderr
+            json_match = re.search(r'\{[^{}]*"input_i"[^{}]*\}', stderr, re.DOTALL)
+            if not json_match:
+                print(f"❌ 測定データ取得失敗: {filename}", flush=True)
+                return False
+
+            try:
+                loudness_data = json.loads(json_match.group())
+            except json.JSONDecodeError:
+                print(f"❌ 測定データパース失敗: {filename}", flush=True)
+                return False
+
+            measured_i = loudness_data.get('input_i', '-24')
+            measured_tp = loudness_data.get('input_tp', '-2')
+            measured_lra = loudness_data.get('input_lra', '7')
+            measured_thresh = loudness_data.get('input_thresh', '-34')
+
+            # 2パス目: 測定値を使って正確にノーマライズ
+            cmd2 = [
                 'ffmpeg', '-y', '-i', filepath, '-vn',
-                '-af', f'loudnorm=I={self.TARGET_LUFS}:TP={self.TRUE_PEAK}:LRA=11',
+                '-af', (f'loudnorm=I={self.TARGET_LUFS}:TP={self.TRUE_PEAK}:LRA=11:'
+                        f'measured_I={measured_i}:measured_TP={measured_tp}:'
+                        f'measured_LRA={measured_lra}:measured_thresh={measured_thresh}:'
+                        'linear=true'),
                 '-f', 'mp3', '-ar', '44100', '-b:a', '320k', temp_path
             ]
 
-            loop = asyncio.get_event_loop()
-            process = await loop.run_in_executor(
+            process2 = await loop.run_in_executor(
                 None,
-                lambda: subprocess.run(cmd, capture_output=True)
+                lambda: subprocess.run(cmd2, capture_output=True)
             )
 
-            if process.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+            if process2.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
                 os.replace(temp_path, filepath)
                 self._mark_normalized(filepath)
-                print(f"✅ ノーマライズ完了: {filename}", flush=True)
+                print(f"✅ ノーマライズ完了: {filename} (2パス)", flush=True)
                 return True
             else:
                 if os.path.exists(temp_path):
