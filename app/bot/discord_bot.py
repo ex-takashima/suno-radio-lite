@@ -241,6 +241,11 @@ class ControlPanelView(ui.View):
         else:
             embed.add_field(name="状態", value="⚫ 停止中", inline=True)
 
+        # 同期/ノーマライズ中の表示
+        if sync_status['is_syncing']:
+            progress = sync_status.get('progress', '処理中...')
+            embed.add_field(name="同期状態", value=f"🔄 {progress}", inline=False)
+
         if stream_status['current_track']:
             embed.add_field(name="再生中", value=stream_status['current_track']['title'], inline=False)
 
@@ -248,6 +253,11 @@ class ControlPanelView(ui.View):
         mode_emoji = "🔀" if audio_player.shuffle_mode else "📑"
         embed.add_field(name="再生モード", value=f"{mode_emoji} {audio_player.get_playback_mode()}", inline=True)
         embed.add_field(name="設定", value="✅ 完了" if config.is_configured() else "❌ 未完了", inline=True)
+
+        # 未ノーマライズ楽曲の警告
+        unnormalized = gdrive_sync.get_unnormalized_count()
+        if unnormalized > 0:
+            embed.add_field(name="⚠️ 未処理", value=f"{unnormalized}曲がノーマライズ未完了", inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
