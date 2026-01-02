@@ -332,9 +332,12 @@ class ControlPanelView(ui.View):
             cpu_out, _ = await cpu_proc.communicate()
             load_avg = cpu_out.decode().strip()
 
-            # メモリ使用量
+            # メモリ使用量（free -hは単位が異なる場合があるため、freeで計算）
+            # freeの出力はKB単位なので、/1024でMB、/1024/1024でGBになる
             mem_proc = await asyncio.create_subprocess_shell(
-                "free -h | awk 'NR==2{print $3\"/\"$2\" (\"int($3/$2*100)\"%)\"}' ",
+                "free | awk 'NR==2{used=$3/1024; total=$2/1024; pct=$3/$2*100; "
+                "if(total>=1024){printf \"%.0fMi/%.1fGi (%d%%)\", used, total/1024, pct}"
+                "else{printf \"%.0fMi/%.0fMi (%d%%)\", used, total, pct}}'",
                 stdout=asyncio.subprocess.PIPE
             )
             mem_out, _ = await mem_proc.communicate()
@@ -681,9 +684,12 @@ async def system_command(interaction: discord.Interaction):
         cpu_out, _ = await cpu_proc.communicate()
         load_avg = cpu_out.decode().strip()
 
-        # メモリ使用量
+        # メモリ使用量（free -hは単位が異なる場合があるため、freeで計算）
+        # freeの出力はKB単位なので、/1024でMB、/1024/1024でGBになる
         mem_proc = await asyncio.create_subprocess_shell(
-            "free -h | awk 'NR==2{print $3\"/\"$2\" (\"int($3/$2*100)\"%)\"}' ",
+            "free | awk 'NR==2{used=$3/1024; total=$2/1024; pct=$3/$2*100; "
+            "if(total>=1024){printf \"%.0fMi/%.1fGi (%d%%)\", used, total/1024, pct}"
+            "else{printf \"%.0fMi/%.0fMi (%d%%)\", used, total, pct}}'",
             stdout=asyncio.subprocess.PIPE
         )
         mem_out, _ = await mem_proc.communicate()
