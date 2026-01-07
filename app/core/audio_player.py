@@ -26,6 +26,9 @@ BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE
 class AudioPlayer:
     """FIFOベースのオーディオプレイヤー"""
 
+    # BrokenPipe連続検出の閾値（この回数連続でBrokenPipeが発生したらFFmpegクラッシュと判定）
+    BROKEN_PIPE_THRESHOLD = 3
+
     def __init__(self):
         self.fifo_path = os.path.join(config.DATA_DIR, 'audio_fifo')
         self.is_playing = False
@@ -40,6 +43,27 @@ class AudioPlayer:
         self._fifo_fd = None
         self._track_start_time = None
         self._last_data_time = None
+        # BrokenPipe連続検出用カウンター
+        self._broken_pipe_count = 0
+        self._ffmpeg_crash_detected = False
+
+    def _check_broken_pipe_threshold(self):
+        """BrokenPipeの連続発生をチェックし、閾値を超えたらFFmpegクラッシュとして検出"""
+        if self._broken_pipe_count >= self.BROKEN_PIPE_THRESHOLD:
+            if not self._ffmpeg_crash_detected:
+                self._ffmpeg_crash_detected = True
+                print(f"FFmpegクラッシュ検出: BrokenPipeが{self._broken_pipe_count}回連続発生", flush=True)
+                # is_playingをFalseにしてstream_managerに通知
+                self.is_playing = False
+
+    def is_ffmpeg_crash_detected(self) -> bool:
+        """FFmpegクラッシュが検出されたかどうかを返す"""
+        return self._ffmpeg_crash_detected
+
+    def reset_crash_detection(self):
+        """クラッシュ検出状態をリセット（復旧時に呼び出す）"""
+        self._broken_pipe_count = 0
+        self._ffmpeg_crash_detected = False
 
     def _create_fifo(self):
         """FIFOを作成"""
@@ -124,8 +148,13 @@ class AudioPlayer:
                 os.write(fifo_fd, silence_chunk[:write_size])
                 bytes_written += write_size
 
+            # 成功したらBrokenPipeカウンターをリセット
+            self._broken_pipe_count = 0
             return True
-        except (BrokenPipeError, OSError):
+        except (BrokenPipeError, OSError) as e:
+            self._broken_pipe_count += 1
+            print(f"無音書き込みエラー: {e} (連続{self._broken_pipe_count}回)", flush=True)
+            self._check_broken_pipe_threshold()
             return False
 
     def _decode_and_write(self, track_path: str, fifo_fd: int) -> bool:
@@ -191,7 +220,11 @@ class AudioPlayer:
 
                 try:
                     os.write(fifo_fd, data)
+                    # 成功したらBrokenPipeカウンターをリセット
+                    self._broken_pipe_count = 0
                 except (BrokenPipeError, OSError):
+                    self._broken_pipe_count += 1
+                    self._check_broken_pipe_threshold()
                     break
 
             # プロセスを確実に終了
@@ -223,7 +256,7 @@ class AudioPlayer:
             self._fifo_fd = os.open(self.fifo_path, os.O_WRONLY)
             print("FIFO接続完了", flush=True)
 
-            while self.is_playing and not self._stop_requested:
+            while self.is_playing and not self._stop_requested and not self._ffmpeg_crash_detected:
                 track = self._get_next_track()
                 if not track:
                     print("再生可能なトラックがありません", flush=True)
@@ -231,6 +264,11 @@ class AudioPlayer:
 
                 self._skip_requested = False
                 self._decode_and_write(track, self._fifo_fd)
+
+                # FFmpegクラッシュが検出されたらループを抜ける
+                if self._ffmpeg_crash_detected:
+                    print("FFmpegクラッシュにより書き込みループを終了", flush=True)
+                    break
 
                 if self._skip_requested:
                     print("スキップ完了", flush=True)
@@ -261,6 +299,8 @@ class AudioPlayer:
         self._create_fifo()
         self.is_playing = True
         self._stop_requested = False
+        # クラッシュ検出をリセット
+        self.reset_crash_detection()
 
         print("オーディオプレイヤー開始", flush=True)
 

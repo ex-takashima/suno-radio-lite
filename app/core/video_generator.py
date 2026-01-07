@@ -20,6 +20,7 @@ class VideoGenerator:
         self._running = False
         self._writer_thread = None
         self._auto_restart = True
+        self._ffmpeg_crash_detected = False  # FFmpegクラッシュ検出フラグ
 
     def _create_fifo(self):
         """Video FIFOを作成"""
@@ -99,6 +100,9 @@ class VideoGenerator:
                         try:
                             fifo.write(data)
                         except (BrokenPipeError, OSError):
+                            # FFmpegクラッシュ検出
+                            print("VideoGenerator: FFmpegクラッシュ検出 (BrokenPipe)", flush=True)
+                            self._ffmpeg_crash_detected = True
                             self._running = False
                             break
 
@@ -148,6 +152,8 @@ class VideoGenerator:
 
         self._create_fifo()
         self._running = True
+        # クラッシュ検出をリセット
+        self.reset_crash_detection()
 
         self._writer_thread = threading.Thread(
             target=self._writer_loop,
@@ -180,6 +186,14 @@ class VideoGenerator:
     def is_running(self) -> bool:
         """実行中かどうか"""
         return self._running
+
+    def is_ffmpeg_crash_detected(self) -> bool:
+        """FFmpegクラッシュが検出されたかどうかを返す"""
+        return self._ffmpeg_crash_detected
+
+    def reset_crash_detection(self):
+        """クラッシュ検出状態をリセット（復旧時に呼び出す）"""
+        self._ffmpeg_crash_detected = False
 
 
 # シングルトン
